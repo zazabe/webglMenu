@@ -1,13 +1,23 @@
 body {
-    background: #f6f6f6;
+    background: #fff;
+    margin: 0;
+    padding: 0;
 }
 
 #container {
     background: #fff;
-    border: 2px solid #999;
-    width: 800px;
-    height: 600px;
-    overflow: hidden;
-    margin: 10px auto;
+    margin: 0;
+    padding: 0;
+    position: relative;
+    
+}
+
+canvas {
+    float: right;
+    border: 1px solid black;
+}
+
+#debug {
+    border: 1px solid red;
 }
 
