@@ -20,7 +20,7 @@ $(document).ready(function(){
       {name: 'el17'},
       {name: 'el18'},
       {name: 'el19'}
-    ], {debug: true, screen: {width: 800, height: 600}});
+    ], {debug: true});
 	
 	console.log(test);
 	

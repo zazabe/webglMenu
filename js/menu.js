@@ -31,7 +31,6 @@ var WebGlMenu = function(target, elements, options){
 	this.elements = elements;
 	
 	this.checkConfig();
-	
 	this.createScene();
 	
 	if(this.opt.debug){
@@ -41,10 +40,9 @@ var WebGlMenu = function(target, elements, options){
 	
 	this.createElements();
 	
-	this.render();
-	
 	this.listenEvents();
 	
+	this.render();
 	this.animate();
 };	
 
@@ -70,9 +68,9 @@ WebGlMenu.prototype = {
 	},
 	
 	render: function(){
-		this.$canvas = $('<canvas>');
-		$(this.target).append(this.$canvas);
-		this.canvas = this.$canvas.get(0);
+		var canvas = $('<canvas>');
+		$(this.target).append(canvas);
+		this.canvas = canvas.get(0);
 		this.renderer = new THREE.WebGLRenderer( { canvas: this.canvas, clearColor: this.scene.color, clearAlpha: 1 } );
 	 	this.renderer.setSize(this.opt.screen.width, this.opt.screen.height);
 		this.target.appendChild( this.renderer.domElement );
@@ -87,11 +85,8 @@ WebGlMenu.prototype = {
 	},
 	
 	tick: function(){
+		this.debugRender();
 		this.renderer.render(this.scene, this.camera);
-		if(this.opt.debug){
-			this.debugRender();
-		}
-		
 	},
 	
 	createElements: function(){
@@ -104,17 +99,17 @@ WebGlMenu.prototype = {
 		this.mouse = { status: 'up', start: { x: 0, y:0 }, position: { x: 0, y:0 }, diff: { x: 0, y:0 }};
 		var mouse = this.mouse;
 		
-		this.$canvas.bind('mousedown', function(e){ 
+		$(this.target).bind('mousedown', function(e){ 
 			mouse.status = 'down';
 			mouse.start = {x: e.offsetX, y: e.offsetY};
 		});
-		this.$canvas.bind('mouseup', function(e){ 
+		$(this.target).bind('mouseup', function(e){ 
 			mouse.status = 'up'; 
 			mouse.diff   = {x: 0, y: 0};
 			mouse.start  = {x: 0, y: 0};
 		});
 		
-		this.$canvas.bind('mousemove', function(e){
+		$(this.target).bind('mousemove', function(e){
 			if(mouse.status == 'down'){
 				mouse.position = {x: e.offsetX, y: e.offsetY};
 				mouse.diff     = {x: (mouse.position.x - mouse.start.x), y: (mouse.position.y - mouse.start.y)};
@@ -178,21 +173,10 @@ WebGlMenu.prototype = {
 
 
 WebGlMenu.prototype.debug = function(){
-	this.debug = { 
-		screen: {
-		    width:  (this.opt.screen.width/2),
-			height: (this.opt.screen.height/2)
-	    }
-	};
-	
+	this.debug = { mouse: { mode: 'position' } };
 	var debug = this.debug;
 	
-	//create renders
-	var canvas = $('<canvas id="debug">');
-	$(this.target).append(canvas);
-	this.debug.canvas = canvas.get(0);
-	this.debug.renderer = new THREE.WebGLRenderer( { canvas: this.debug.canvas, clearColor: this.scene.color, clearAlpha: 1 } );
- 	this.debug.renderer.setSize(this.debug.screen.width, this.debug.screen.height);
+	
 	
 	//axes
 	this.debug.axes = {
@@ -204,9 +188,6 @@ WebGlMenu.prototype.debug = function(){
 	this.scene.add(this.debug.axes.x);
 	this.scene.add(this.debug.axes.y);
 	this.scene.add(this.debug.axes.z);
-	
-
-	console.log(this.scene);
 	
 	//camera spot
 	this.debug.camera = {
@@ -220,41 +201,54 @@ WebGlMenu.prototype.debug = function(){
 	
 	// views
 	this.debug.views = [
-        { fly: false, eye: [ 100, -300, 600 ], up: [ 0, 0, 0 ], rotate: [0.6, 0, 0], background: { r: 0.4, g: 0.4, b: 0.4, a: 1 }}
+        { left: 0, fly: true, bottom: 0, width: 0.5, height: 1, background: { r: 0, g: 0, b: 0, a: 1 } },
+        { left: 0.5, fly: false, bottom: 0, width: 0.5, height: 0.5, eye: [ 400, -50, 150 ], up: [ 0, 0, 0 ], rotate: [0, 1, 0],  background: {  r: 0.3, g: 0.3, b: 0.3, a: 1 }},
+        { left: 0.5, fly: false, bottom: 0.5, width: 0.5, height: 0.5, eye: [ 0, 0, 300 ], up: [ 0, 0, 0 ], rotate: [0, 0, 0], background: { r: 0.4, g: 0.4, b: 0.4, a: 1 }}
 	];
 	
 	for(var i=0; i < this.debug.views.length; ++i){
-		var view = this.debug.views[i]; 
-		view.camera = new THREE.PerspectiveCamera(45, this.opt.screen.width / this.opt.screen.height, 0.1, 10000);
+		var view = this.debug.views[i], camera = null;
+		//first view is the normal camera
+		if(i==0){
+			camera = this.camera;
+		}
+		else {
+			camera = new THREE.PerspectiveCamera(45, this.opt.screen.width / this.opt.screen.height, 0.1, 10000);
+		}
 		
 		if(view.eye){
-			view.camera.position.x = view.eye[0];
-			view.camera.position.y = view.eye[1];
-			view.camera.position.z = view.eye[2];
+			camera.position.x = view.eye[0];
+			camera.position.y = view.eye[1];
+			camera.position.z = view.eye[2];
 		}
 		if(view.up){
-			view.camera.up.x = view.up[0];
-			view.camera.up.y = view.up[1];
-			view.camera.up.z = view.up[2];
+			camera.up.x = view.up[0];
+			camera.up.y = view.up[1];
+			camera.up.z = view.up[2];
 		}
 		if(view.rotate){
-			view.camera.rotation.x = view.rotate[0];
-			view.camera.rotation.y = view.rotate[1];
-			view.camera.rotation.z = view.rotate[2];
+			camera.rotation.x = view.rotate[0];
+			camera.rotation.y = view.rotate[1];
+			camera.rotation.z = view.rotate[2];
 		}
 		
-		this.scene.add(view.camera);
+		if(i!=0){
+			this.scene.add(camera);
+		}
+		
+		view.camera = camera;
 		
 		if(view.fly){
 			console.log('fly', i);
-			view.control = new THREE.FlyControls( view.camera, this.debug.canvas);
-			view.control.domElement = this.debug.canvas;
-			view.control.movementSpeed = 1;
-			view.control.rollSpeed = 0.05;
+			view.control = new THREE.FlyControls( view.camera, this.canvas);
+			view.control.domElement = this.target;
+			view.control.movementSpeed = 0.05;
+			view.control.rollSpeed = 0.0005;
 			view.control.autoForward = false;
 			view.control.dragToLook = true;
 		}
 	}
+	console.log(this.debug);
 };
 
 
@@ -263,16 +257,24 @@ WebGlMenu.prototype.debugRender = function(){
 	for(var i=0; i < this.debug.views.length; ++i){
 		view = this.debug.views[i];
 		
+		var left   = Math.floor( this.opt.screen.width  * view.left );
+		var bottom = Math.floor( this.opt.screen.height * view.bottom );
+		var width  = Math.floor( this.opt.screen.width  * view.width );
+		var height = Math.floor( this.opt.screen.height * view.height );
+	
+		this.renderer.setViewport( left, bottom, width, height );
+		this.renderer.setScissor( left, bottom, width, height );
+		this.renderer.enableScissorTest (true);
 		if(view.background){
-			this.debug.renderer.setClearColor( view.background, view.background.a );
-		}
-		if(view.control){
-			view.control.update(1);
+			this.renderer.setClearColor( view.background, view.background.a );
 		}
 		
-		view.camera.aspect = this.debug.screen.width / this.debug.screen.height;
+		if(view.control){
+			//view.control.update(1);
+		}
+		view.camera.aspect = width / height;
 		view.camera.updateProjectionMatrix();
-		this.debug.renderer.render(this.scene, view.camera);
+		this.renderer.render(this.scene, view.camera);
 	}
 };
 
