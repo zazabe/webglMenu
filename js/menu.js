@@ -10,7 +10,9 @@ var WebGlMenu = function(target, elements, options){
 			height: window.innerHeight
 	    },
 	    light: {
-	    	color: 0xffffff
+	    	ambient: { color: 0x505050 },
+	    	spot:    { color: 0xffffff, position: {x: 0, y: 500, z: 2000 }, shadow: true }
+	    	
 	    },
 	    grid: {
 	    	row: 5,
@@ -29,6 +31,7 @@ var WebGlMenu = function(target, elements, options){
 	
 	this.target = target;	
 	this.elements = elements;
+	this.objects = [];
 	
 	this.checkConfig();
 	this.createScene();
@@ -54,17 +57,39 @@ WebGlMenu.prototype = {
 	
 	createScene: function(){
 		this.scene  = new THREE.Scene();
-		this.camera = new THREE.PerspectiveCamera(45, this.opt.screen.width / this.opt.screen.height, 0.1, 10000);
-		this.light  = new THREE.AmbientLight( this.opt.light.color );
+		this.projector = new THREE.Projector();
 		
+		this.setCamera();
+		this.setLight();
+				
 		this.scene.add(this.camera);
-		this.scene.add(this.light);
+		//this.scene.add(this.light.ambient);
+		//this.scene.add(this.light.spot);
+		this.scene.add(this.light.point);
 		
-		this.camera.position = {
-			x: 0,
-			y: 0, 
-			z: 300
+	},
+	
+	setCamera: function(){
+		var camera = new THREE.MenuCamera(45, this.opt.screen.width / this.opt.screen.height, 0.1, 10000);
+		camera.position.set(0, 0, 150);
+		this.camera = camera;
+	},
+	
+	setLight: function(){
+		var spotPosition = this.opt.light.spot.position;
+		var spot = new THREE.SpotLight( this.opt.light.spot.color, 0.01 );
+		
+		spot.position.set(spotPosition.x, spotPosition.y, spotPosition.z);		
+		
+		var point = new THREE.PointLight( 0xffffff, 2, 150 );
+		
+		this.light  = {
+			ambient: new THREE.AmbientLight( this.opt.light.ambient.color ),
+			spot: spot,
+			point: point
 		};
+		
+			
 	},
 	
 	render: function(){
@@ -73,20 +98,32 @@ WebGlMenu.prototype = {
 		this.canvas = canvas.get(0);
 		this.renderer = new THREE.WebGLRenderer( { canvas: this.canvas, clearColor: this.scene.color, clearAlpha: 1 } );
 	 	this.renderer.setSize(this.opt.screen.width, this.opt.screen.height);
-		this.target.appendChild( this.renderer.domElement );
+	 	this.target.appendChild( this.renderer.domElement );
 	},
 	
 	animate: function(){
-		var that = this;
-		requestAnimationFrame( function(){
-			that.animate();
+		var inst = this;
+		requestAnimationFrame(function(){
+			inst.animate();
 		});
 		this.tick();
 	},
 	
 	tick: function(){
-		this.debugRender();
+		this.movePointLight();
+		
 		this.renderer.render(this.scene, this.camera);
+		
+		if(this.opt.debug){
+			this.debugRender();
+		}
+	},
+	
+	movePointLight: function(){
+		if(this.camera.target.hasLookStatus('position')){
+			this.light.point.position = this.camera.target.status.look.position.clone();
+			this.light.point.position.z = 30;
+		}
 	},
 	
 	createElements: function(){
@@ -97,7 +134,12 @@ WebGlMenu.prototype = {
 	
 	listenEvents: function(){
 		this.mouse = { status: 'up', start: { x: 0, y:0 }, position: { x: 0, y:0 }, diff: { x: 0, y:0 }};
-		var mouse = this.mouse;
+		var mouse = this.mouse,
+		    projector = this.projector,
+		    camera = this.camera,
+		    scene = this.scene;
+		
+		console.log(mouse, this.projector, projector, camera, scene);
 		
 		$(this.target).bind('mousedown', function(e){ 
 			mouse.status = 'down';
@@ -109,6 +151,21 @@ WebGlMenu.prototype = {
 			mouse.start  = {x: 0, y: 0};
 		});
 		
+		$(this.target).bind('click', function(e){
+			event.preventDefault();
+
+			mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+			mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+			
+			var vector = new THREE.Vector3( mouse.x, mouse.y, 1 );
+			projector.unprojectVector(vector, camera);
+			var ray = new THREE.Ray( camera.position, vector.subSelf(camera.position).normalize() );
+			var intersects = ray.intersectObjects( scene.children );
+			if ( intersects.length > 0 ) {
+				camera.target.set(intersects[0].object);
+			} 
+		});
+		
 		$(this.target).bind('mousemove', function(e){
 			if(mouse.status == 'down'){
 				mouse.position = {x: e.offsetX, y: e.offsetY};
@@ -118,7 +175,7 @@ WebGlMenu.prototype = {
 	},
 	
 	go: function(id){
-		
+		this.camera.target.set(this.objects[id], 2000);
 	},
 	
 	next: function(){
@@ -139,15 +196,23 @@ WebGlMenu.prototype = {
 	
 	add: function(object, index){
 		var geometry = new THREE.CubeGeometry(this.opt.element.width, this.opt.element.height, this.opt.element.thickness);
-		var material = new THREE.MeshLambertMaterial( { color: this.opt.element.color });
+		var materialOption = { color: this.opt.element.color };
+		if(object.material && object.material.url){
+			 var texture = THREE.ImageUtils.loadTexture(object.material.url);
+			 texture.repeat.set( 1, 1);
+			 texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+			 materialOption.map = texture;
+		}
+		var material = new THREE.MeshLambertMaterial(materialOption);
 		var element = new THREE.Mesh(geometry, material);
 		
-		element.position = {
-			x: ((index % this.opt.grid.row) * (this.opt.element.width + this.opt.grid.margin)), 
-			y: -((Math.floor(index / this.opt.grid.row)) * (this.opt.element.height + this.opt.grid.margin)), 
-			z: 0
-		};
+		element.position.set(
+			 ((index % this.opt.grid.row) * (this.opt.element.width + this.opt.grid.margin)), 
+			 -((Math.floor(index / this.opt.grid.row)) * (this.opt.element.height + this.opt.grid.margin)), 
+			 0
+		);
 		
+		this.objects[index] = element;
 		this.scene.add(element);
 	},
 	
@@ -191,23 +256,23 @@ WebGlMenu.prototype.debug = function(){
 	
 	//camera spot
 	this.debug.camera = {
-		spot: this.createCubeMesh(10, 10, 10, 0x995555)
+		spot: this.createCubeMesh(1, 1, this.camera.position.z, 0x990000)
 	};
 	
-	this.debug.camera.spot.position = this.camera.position;
 	
 	this.scene.add(this.debug.camera.spot );
 	
 	
 	// views
 	this.debug.views = [
-        { left: 0, fly: true, bottom: 0, width: 0.5, height: 1, background: { r: 0, g: 0, b: 0, a: 1 } },
-        { left: 0.5, fly: false, bottom: 0, width: 0.5, height: 0.5, eye: [ 400, -50, 150 ], up: [ 0, 0, 0 ], rotate: [0, 1, 0],  background: {  r: 0.3, g: 0.3, b: 0.3, a: 1 }},
-        { left: 0.5, fly: false, bottom: 0.5, width: 0.5, height: 0.5, eye: [ 0, 0, 300 ], up: [ 0, 0, 0 ], rotate: [0, 0, 0], background: { r: 0.4, g: 0.4, b: 0.4, a: 1 }}
+        { left: 0, fly: false, info: true, bottom: 0, width: 1, height: 1, background: { r: 0, g: 0, b: 0, a: 1 } },
+        { left: 0.75, fly: true, info: false, bottom: 0.75, width: 0.25, height: 0.25, eye: [ 0, 0, 300 ], up: [ 0, 0, 0 ], rotate: [0, 0, 0], background: { r: 0.4, g: 0.4, b: 0.4, a: 1 }}
 	];
 	
 	for(var i=0; i < this.debug.views.length; ++i){
 		var view = this.debug.views[i], camera = null;
+		
+		
 		//first view is the normal camera
 		if(i==0){
 			camera = this.camera;
@@ -215,6 +280,12 @@ WebGlMenu.prototype.debug = function(){
 		else {
 			camera = new THREE.PerspectiveCamera(45, this.opt.screen.width / this.opt.screen.height, 0.1, 10000);
 		}
+		
+		view.left   = Math.floor( this.opt.screen.width  * view.left );
+		view.bottom = Math.floor( this.opt.screen.height * view.bottom );
+		view.width  = Math.floor( this.opt.screen.width  * view.width );
+		view.height = Math.floor( this.opt.screen.height * view.height );
+		
 		
 		if(view.eye){
 			camera.position.x = view.eye[0];
@@ -238,46 +309,137 @@ WebGlMenu.prototype.debug = function(){
 		
 		view.camera = camera;
 		
+
+		
+		if(view.info){
+			view.info = new Debug.InfoPanel(view.camera, {x: 10, y: 10}, this.target);
+		}
 		if(view.fly){
 			console.log('fly', i);
 			view.control = new THREE.FlyControls( view.camera, this.canvas);
 			view.control.domElement = this.target;
-			view.control.movementSpeed = 0.05;
-			view.control.rollSpeed = 0.0005;
+			view.control.movementSpeed = 30;
+			view.control.rollSpeed = 0.05;
 			view.control.autoForward = false;
 			view.control.dragToLook = true;
 		}
 	}
-	console.log(this.debug);
 };
 
 
 WebGlMenu.prototype.debugRender = function(){
 	//render cameras
+	this.debug.camera.spot.position.set(
+			this.camera.position.x,
+			this.camera.position.y,
+			(this.camera.position.z/2)
+	); 
+	
+	
 	for(var i=0; i < this.debug.views.length; ++i){
 		view = this.debug.views[i];
 		
-		var left   = Math.floor( this.opt.screen.width  * view.left );
-		var bottom = Math.floor( this.opt.screen.height * view.bottom );
-		var width  = Math.floor( this.opt.screen.width  * view.width );
-		var height = Math.floor( this.opt.screen.height * view.height );
-	
-		this.renderer.setViewport( left, bottom, width, height );
-		this.renderer.setScissor( left, bottom, width, height );
+		this.renderer.setViewport( view.left, view.bottom, view.width, view.height );
+		this.renderer.setScissor( view.left, view.bottom, view.width, view.height );
 		this.renderer.enableScissorTest (true);
 		if(view.background){
 			this.renderer.setClearColor( view.background, view.background.a );
 		}
 		
 		if(view.control){
-			//view.control.update(1);
+			view.control.update(1);
 		}
-		view.camera.aspect = width / height;
+		view.camera.aspect = view.width / view.height;
 		view.camera.updateProjectionMatrix();
 		this.renderer.render(this.scene, view.camera);
 	}
 };
 
+Debug = {};
+Debug.InfoPanel = function(object3D, position, target){
+	this.check(object3D);
+
+	console.log(object3D);
+	
+	this.object = object3D;
+	this.target = $(target);
+	
+	this.createPanel(position);
+	this.listenTicks();
+};
+
+Debug.InfoPanel.prototype = {
+		
+	createPanel: function(position){
+		this.panel = $('<div>');
+		this.panel.css({
+			border: '1px solid #999',
+			borderRadius: '5px',
+			background: '#e5e5e5',
+			padding: '2px',
+			position: 'absolute',
+			left: position.x + 'px',
+			top: position.y + 'px',
+			fontSize: '8px',
+			opacity: 0.5
+		});
+		
+		this.content = {
+			ul: $('<ul id="' + this.getId() + '">'),
+			li: {},
+			attachList: function(){
+				for(var name in this.li){
+					this.ul.append(this.li[name]);
+				}
+			}
+		};
+		
+		this.panel.append(this.content.ul);
+		
+		this.target.append(this.panel);
+	},	
+	
+	display: function(){
+		var update = false, str = '', properties = ['position', 'rotation', 'scale', 'up', '_vector'], name = null;
+		for(var i in properties){
+			name = properties[i];
+			if(this.object[name]){
+				str = name + ' = x: ' + (this.object[name].x ? this.object[name].x : 'none')
+						   + ', y: ' + (this.object[name].y ? this.object[name].y : 'none')
+						   + ', z: ' + (this.object[name].z ? this.object[name].z : 'none');
+				
+				if(!this.content.li[name]){
+					this.content.li[name] = $('<li>').addClass(name).css({
+						padding: 0, margin: 0, listStyle: 'none'
+					});
+					update = true;
+				}
+				this.content.li[name].html(str);
+			}
+		}
+		if(update){
+			this.content.attachList();
+		}
+	},
+	
+	getId: function(){
+		return 'debug_' + this.object.id; 
+	},
+	
+	listenTicks: function(){
+		var inst = this;
+		requestAnimationFrame(function(){
+			inst.listenTicks();
+		});
+		this.display();
+	},
+	
+	check: function(object){
+		if(!(object instanceof THREE.MenuCamera)){
+			throw new Error('object3D parameter is not an instance of THREE.MenuCamera');
+		}
+	}
+};
 
 
 
@@ -297,4 +459,6 @@ $.fn.WebGlMenu = function(elements, options){
 	return instance;
 }	
 	
+
+
 })(jQuery)
