@@ -63,9 +63,9 @@ WebGlMenu.prototype = {
 		this.setLight();
 				
 		this.scene.add(this.camera);
-		//this.scene.add(this.light.ambient);
-		//this.scene.add(this.light.spot);
-		this.scene.add(this.light.point);
+		this.scene.add(this.light.ambient);
+		this.scene.add(this.light.spot);
+		//this.scene.add(this.light.point);
 		
 	},
 	
@@ -73,11 +73,12 @@ WebGlMenu.prototype = {
 		var camera = new THREE.MenuCamera(45, this.opt.screen.width / this.opt.screen.height, 0.1, 10000);
 		camera.position.set(0, 0, 150);
 		this.camera = camera;
+		console.log(camera);
 	},
 	
 	setLight: function(){
 		var spotPosition = this.opt.light.spot.position;
-		var spot = new THREE.SpotLight( this.opt.light.spot.color, 0.01 );
+		var spot = new THREE.SpotLight( this.opt.light.spot.color, 1 );
 		
 		spot.position.set(spotPosition.x, spotPosition.y, spotPosition.z);		
 		
@@ -250,23 +251,28 @@ WebGlMenu.prototype.debug = function(){
 		z: this.createCubeMesh(1, 1, 100, 0x000099)
 	};
 	
+	this.debug.axes.x.position.set(50, 0, 0);
+	this.debug.axes.y.position.set(0, 50, 0);
+	this.debug.axes.z.position.set(0, 0, 50);
+	
 	this.scene.add(this.debug.axes.x);
 	this.scene.add(this.debug.axes.y);
 	this.scene.add(this.debug.axes.z);
 	
 	//camera spot
 	this.debug.camera = {
-		spot: this.createCubeMesh(1, 1, this.camera.position.z, 0x990000)
+		eye: this.createCubeMesh(20, 20, 20, 0x990000),
+		look: this.createCubeMesh(20, 20, 20, 0x009900)
 	};
 	
-	
-	this.scene.add(this.debug.camera.spot );
+	this.scene.add(this.debug.camera.eye);
+	this.scene.add(this.debug.camera.look);
 	
 	
 	// views
 	this.debug.views = [
-        { left: 0, fly: false, info: true, bottom: 0, width: 1, height: 1, background: { r: 0, g: 0, b: 0, a: 1 } },
-        { left: 0.75, fly: true, info: false, bottom: 0.75, width: 0.25, height: 0.25, eye: [ 0, 0, 300 ], up: [ 0, 0, 0 ], rotate: [0, 0, 0], background: { r: 0.4, g: 0.4, b: 0.4, a: 1 }}
+        { left: 0, fly: false, info: false, bottom: 0, width: 1, height: 1, background: { r: 0, g: 0, b: 0, a: 1 } },
+        { left: 0.75, fly: false, info: false, bottom: 0.75, width: 0.25, height: 0.25, eye: [ 350, -150, 400 ], at: [ 0, 0, 0 ], rotate: [0, 0, 0], background: { r: 0.4, g: 0.4, b: 0.4, a: 1 }}
 	];
 	
 	for(var i=0; i < this.debug.views.length; ++i){
@@ -279,6 +285,7 @@ WebGlMenu.prototype.debug = function(){
 		}
 		else {
 			camera = new THREE.PerspectiveCamera(45, this.opt.screen.width / this.opt.screen.height, 0.1, 10000);
+			
 		}
 		
 		view.left   = Math.floor( this.opt.screen.width  * view.left );
@@ -292,11 +299,7 @@ WebGlMenu.prototype.debug = function(){
 			camera.position.y = view.eye[1];
 			camera.position.z = view.eye[2];
 		}
-		if(view.up){
-			camera.up.x = view.up[0];
-			camera.up.y = view.up[1];
-			camera.up.z = view.up[2];
-		}
+		
 		if(view.rotate){
 			camera.rotation.x = view.rotate[0];
 			camera.rotation.y = view.rotate[1];
@@ -329,15 +332,18 @@ WebGlMenu.prototype.debug = function(){
 
 WebGlMenu.prototype.debugRender = function(){
 	//render cameras
-	this.debug.camera.spot.position.set(
-			this.camera.position.x,
-			this.camera.position.y,
-			(this.camera.position.z/2)
-	); 
+	this.debug.camera.eye.position = this.camera.position.clone();
+	if(this.camera.target.hasLookStatus()){
+		this.debug.camera.look.position =  this.camera.target.status.look.position.clone();
+	}
 	
 	
 	for(var i=0; i < this.debug.views.length; ++i){
 		view = this.debug.views[i];
+		
+		if(view.at){
+			view.camera.lookAt(new THREE.Vector3( view.at[0], view.at[1], view.at[2]));
+		}
 		
 		this.renderer.setViewport( view.left, view.bottom, view.width, view.height );
 		this.renderer.setScissor( view.left, view.bottom, view.width, view.height );

@@ -213,9 +213,6 @@ THREE.MenuCamera.Target.prototype = {
 			}	
 		};
 		this.status.look.position.z = 0;
-		
-		
-		
 	},
 	
 	hasLookStatus: function(property){

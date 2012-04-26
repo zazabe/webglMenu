@@ -26,8 +26,7 @@ $(document).ready(function(){
       {name: 'slide1', material: { url: 'images/image_5.png' }},
       {name: 'slide1', material: { url: 'images/image_6.png' }},
       {name: 'slide1', material: { url: 'images/image_7.png' }}
-    ], {debug: false});
+    ], {debug: true});
 	
 	console.log(test);
-	
 });
