@@ -1,3 +1,7 @@
+document.body.addEventListener('touchmove', function(event) {
+  event.preventDefault();
+}, false); 
+
 $(document).ready(function(){
 	
 	var test = $('#container').WebGlMenu([

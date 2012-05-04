@@ -1,5 +1,12 @@
 (function($){
-
+var Utils = {
+	rad2deg: function(rad){
+		return rad*(180/Math.PI);
+	},
+	deg2rad: function(deg){
+		return deg*(Math.PI/180);
+	}
+};
 	
 var WebGlMenu = function(target, elements, options){
 	this.setOption({
@@ -18,7 +25,7 @@ var WebGlMenu = function(target, elements, options){
 	    },
 	    
 	    grid: {
-	    	row: 6,
+	    	row: 12,
 	    	margin: 10
 	    },
 	    
@@ -32,13 +39,12 @@ var WebGlMenu = function(target, elements, options){
 	    },
 	    
 	    move: {
+	    	speed: 2,
 	    	duration: 1000
 	    },
 	    
 	    current: {x: 0, y: 0, z: 0}
 	}, options);
-	
-	console.log(this.opt);
 	
 	this.target = target;	
 	this.elements = elements;
@@ -48,7 +54,6 @@ var WebGlMenu = function(target, elements, options){
 	this.createScene();
 	
 	if(this.opt.debug){
-		console.log(this.opt.debug);
 		this.debug();
 	}
 	
@@ -56,6 +61,8 @@ var WebGlMenu = function(target, elements, options){
 	this.listenEvents();
 	this.render();
 	this.animate();
+	
+	this.selectElement(0,0, 1000);
 };	
 
 
@@ -68,21 +75,27 @@ WebGlMenu.prototype = {
 		this.scene  = new THREE.Scene();
 		this.projector = new THREE.Projector();
 		
-		this.setCamera();
 		this.setLight();
+		this.setCamera();
 				
 		this.scene.add(this.camera);
 		this.scene.add(this.light.ambient);
-		this.scene.add(this.light.spot);
-		//this.scene.add(this.light.point);
+		//this.scene.add(this.light.spot);
+		this.scene.add(this.light.point);
 		
 	},
 	
 	setCamera: function(){
-		var camera = new THREE.MenuCamera(45, this.opt.screen.width / this.opt.screen.height, 0.1, 10000);
+		var camera = new THREE.MenuCamera({
+			distance: (this.opt.element.radius * 2) - 10,
+			fov: 45,
+			aspect: (this.opt.screen.width / this.opt.screen.height),
+			near: 0.1,
+			far: 2000,
+			looklight: this.light.point
+		});
 		camera.position.set(0, 0, 150);
 		this.camera = camera;
-		console.log(camera);
 	},
 	
 	setLight: function(){
@@ -91,7 +104,7 @@ WebGlMenu.prototype = {
 		
 		spot.position.set(spotPosition.x, spotPosition.y, spotPosition.z);		
 		
-		var point = new THREE.PointLight( 0xffffff, 2, 150 );
+		var point = new THREE.PointLight( 0xffffff, 1.4, 100 );
 		
 		this.light  = {
 			ambient: new THREE.AmbientLight( this.opt.light.ambient.color ),
@@ -120,7 +133,6 @@ WebGlMenu.prototype = {
 	},
 	
 	tick: function(){
-		this.movePointLight();
 		TWEEN.update();
 		
 		this.renderer.render(this.scene, this.camera);
@@ -130,12 +142,6 @@ WebGlMenu.prototype = {
 		}
 	},
 	
-	movePointLight: function(){
-		if(this.camera.look.object){
-			this.light.point.position = this.camera.look.object.getPositionAt(40);
-		}	
-		
-	},
 	
 	createElements: function(){
 		for(var index=0 ; index < this.elements.length ; index++){
@@ -144,29 +150,255 @@ WebGlMenu.prototype = {
 	},
 	
 	listenEvents: function(){
-		this.mouse = { status: 'up', start: { x: 0, y:0 }, position: { x: 0, y:0 }, diff: { x: 0, y:0 }};
-		var mouse = this.mouse,
-		    projector = this.projector,
-		    camera = this.camera,
-		    scene = this.scene,
-		    opt = this.opt;
-		
-		
-		$(this.target).bind('click', function(e){
-			event.preventDefault();
-
-			mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-			mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
+		var menu = this;
 			
-			var vector = new THREE.Vector3( mouse.x, mouse.y, 1 );
-			projector.unprojectVector(vector, camera);
-			var ray = new THREE.Ray( camera.position, vector.subSelf(camera.position).normalize() );
-			var intersects = ray.intersectObjects( scene.children );
-			if ( intersects.length > 0 ) {
-				camera.moveTo(intersects[0].object, opt.move.duration);
-			} 
-		});
+		var events = {
+			swipe:     false,
+			zoom:      false,
+			press:     false,
+			start:    {x: 0, y: 0},
+			current:  {x: 0, y: 0},
+			end:      {x: 0, y: 0},
+			distance: 0,
+			
+			start: function(e){
+				if( e.originalEvent.touches.length <= 1){
+					e.preventDefault();
+					if(e.button == 0){
+						events.press = true;
+					}
+					events.set('start', e);
+					events.set('current', e);
+				}
+			},
+			move: function(e){
+				if( e.originalEvent.touches.length <= 1){
+					e.preventDefault();
+					if((events.swipe || events.zoom) && events.press){
+						events.set('current', e);
+						events.distance = events.getDistance();
+						events.set('start', e);
+						
+						if(events.swipe){
+							events.doSwipe();
+						}
+						if(events.zoom){
+							events.doZoom();
+						}
+					}
+				}
+			},
+			end: function(e){
+				if( e.originalEvent.touches.length <= 1){
+					e.preventDefault();
+					events.set('end', e);
+					events.set('current', e);
+					events.set('start', e);
+					events.distance = 0;
+					if(e.button == 0){
+						events.press = false;
+					}
+				}
+			},
+			doSwipe: function(){
+				menu.swipe(this.distance);
+			},
+			doZoom: function(){
+				menu.zoom(this.distance);
+			},
+			set: function(type, event){
+				this[type] = {
+					x: event.clientX,
+					y: event.clientY
+				};
+			},
+			getDistance: function(){
+				var positive = (this.start.x - this.current.x) < 0 ? false : true;
+				var distance = Math.floor((Math.sqrt(Math.pow(this.start.x - this.current.x, 2) + Math.pow(this.start.y - this.current.y, 2)))*10)/10;
+				distance = (positive && distance < 0) || (!positive && distance > 0) ? -distance : distance;
+				return distance;
+			}
+		};
 		
+
+		//simulate zoom, move event
+		if(!Modernizr.touch){
+			$(window).bind('mouseup', function(e){
+				e.preventDefault();
+				if(events.swipe){
+					var object = null, x = 0, y = 0, inc = 0.01, positive = true, test = 0; 
+					while(object == null){
+						object = menu.getElementAtPosition(x, y);
+						x += positive ? inc : -inc; y +=  positive ? inc : -inc;
+						if(x > 100 || y > 100) {
+							positive = false;
+						}
+						if(x < -100 || y < -100) {
+							positive = true;
+						}
+						if(++test > 10000){
+							throw new Error('can not autodetect closest element...');
+						}
+					}
+					menu.camera.look.object = object;
+					menu.selectElement(x,y, 300);
+					
+				}
+			});
+			
+			$(window).bind('keydown', function(e){
+				switch( e.keyCode) {
+					case 81: /*q*/ events.swipe = true; break;
+					case 87: /*w*/ events.zoom = true; break;
+				}
+			});
+			$(window).bind('keyup', function(e){
+				switch( e.keyCode) {
+					case 81: /*q*/ events.swipe = false; break;
+					case 87: /*w*/ events.zoom = false; break;
+				}
+			});
+			
+			$(this.target).bind('mousedown', events.start);
+			$(this.target).bind('mousemove', events.move);
+			$(this.target).bind('mouseup', events.end);
+		} 
+		else {
+			// handle touch event for zoom and move 
+			$(this.target).bind('touchstart', events.start);
+			$(this.target).bind('touchmove', events.move);
+			$(this.target).bind('touchend', events.end);
+			
+			$(this.target).hammer({prevent_default:true}).bind('transformstart', function(e){
+				events.swipe = false;
+				events.zoom = true;
+			});
+			
+			var scale = 1;
+			$(this.target).hammer({prevent_default:true}).bind('transform', function(e){
+				events.distance = scale - e.scale;
+				events.doZoom();
+			});
+			
+			$(this.target).hammer({prevent_default:true}).bind('transformend', function(e){
+				menu.mouse.swipe = false;
+				menu.mouse.zoom = false;
+			});
+			
+			var oldDistance = null;
+			//select element
+			$(this.target).bind('touchstart',  function(e){
+				if(events.distance == 0 && e.originalEvent.touches.length <= 1){
+					
+					var x = ( e.originalEvent.touches[0].clientX / window.innerWidth ) * 2 - 1,
+					    y = - ( e.originalEvent.touches[0].clientY / window.innerHeight ) * 2 + 1;
+					var object = menu.getElementAtPosition(x, y);
+					
+					if(menu.camera.look.distance <= 40 && object && object.scale.x > 1){
+						console.log('unzoom', oldDistance);
+						menu.camera.distanceToElement(oldDistance, 1000);
+						menu.camera.look.distance = oldDistance;
+					}
+					else if(object && object.scale.x > 1){
+						console.log('zoom');
+						oldDistance = menu.camera.look.distance;
+						menu.enterElement(x, y);
+					}
+					else {
+						menu.selectElement(x, y, menu.opt.move.duration, true);
+					}
+				}
+				
+			
+			});
+			
+				
+		}
+		
+		
+		
+		
+		
+	},
+	
+	enterElement: function(x, y){
+		var object = this.getElementAtPosition(x, y), menu = this;
+		if(object){
+			this.camera.distanceToElement(40, menu.opt.move.duration, function(){
+				this.look.distance = 40;
+				menu.trigger('webglmenu:enter-element', [menu, object]);
+			});
+		}
+	},
+	
+	selectElement: function(x, y, duration, force){
+		force = force || false;
+		var object = this.getElementAtPosition(x, y), menu = this;
+		if(object){
+			this.camera.moveTo(object, duration || this.opt.move.duration, function(){
+				menu.trigger('webglmenu:select-element', [menu, object]);
+				for(var index in menu.objects){
+					if(menu.objects[index].scale.x != 1){
+						menu.objects[index].scaleTo(1, 1, 1, 200);
+					}
+						
+				}
+				this.look.object.scaleTo(1.1,1.1,1.1, 200);
+			}, force);
+		}
+	},
+	
+	zoom: function(distance){
+		var distance = this.camera.look.distance + distance;
+		if(distance > 50 && distance < (this.opt.element.radius * 2) - 10){
+			this.camera.distanceToElement(distance);
+		}
+	},
+	
+	swipe: function(degree){
+		
+		var object = this.camera.look.object,
+		    current = object.position.clone(),
+		    angle = this.camera.look.angle + Utils.deg2rad(degree),
+			lookat = new THREE.Vector3(
+				this.opt.element.radius * Math.cos(angle),
+				current.y,
+				-(this.opt.element.radius * Math.sin(angle))
+		);
+		
+		this.camera.lookAt(lookat);
+		this.camera.look.position = lookat;
+		this.camera.look.angle = angle;
+		
+		this.camera.position.set(
+				(this.opt.element.radius - this.camera.look.distance) * Math.cos(angle),
+				this.camera.position.y,
+				-(this.opt.element.radius - this.camera.look.distance) * Math.sin(angle)
+		);
+		
+		this.light.point.position.set(
+			(this.opt.element.radius - 30) * Math.cos(angle),
+			this.camera.position.y,
+			-(this.opt.element.radius - 30) * Math.sin(angle)
+		);
+	},
+	
+	moveForward: function(){
+		var distance = this.camera.look.distance - this.opt.move.speed;
+		
+		console.log('moveForward', distance);
+		if(distance > 50){
+			this.camera.distanceToElement(distance);
+		}
+	},
+	
+	moveBackward: function(){
+		var distance = this.camera.look.distance + this.opt.move.speed;
+		
+		console.log('moveBackward', distance);
+		if(distance < (this.opt.element.radius * 2) - 10){
+			this.camera.distanceToElement(distance);
+		}
 	},
 	
 	go: function(id){
@@ -188,13 +420,21 @@ WebGlMenu.prototype = {
 	first: function(){
 		
 	},
+
+	getElementAtPosition: function(x, y){
+		var vector = new THREE.Vector3( x, y, 1 );
+		this.projector.unprojectVector(vector, this.camera);
+		var ray = new THREE.Ray( this.camera.position, vector.subSelf(this.camera.position).normalize() );
+		var intersects = ray.intersectObjects( this.scene.children );
+		return intersects.length > 0 ? intersects[0].object : null;
+	},
 	
 	add: function(object, index){
 		var element = this.createCubeMesh(this.opt.element.width, this.opt.element.height, this.opt.element.thickness, this.opt.element.color, object.material.url);
 		
 		var radius = this.opt.element.radius,
 		    nb =  (index % this.opt.grid.row),
-		    angle =  this.opt.element.angle * nb * (Math.PI/180);
+		    angle = Utils.deg2rad(this.opt.element.angle * nb);
 
 		element.position.set(
 		 	 radius * Math.cos(angle),
@@ -218,9 +458,14 @@ WebGlMenu.prototype = {
 	},
 	
 	checkConfig: function(){
-		if(!(typeof THREE == 'object' && THREE.REVISION >= 48)){
-			throw new Error('THREE.js is not included or it is an old version (>48)');
+		if(!Modernizr.webgl){
+			throw new Error('Your browser doesn\'t support WebGL');
 		}
+		
+		if(!(typeof THREE == 'object' && THREE.REVISION >= 48)){
+			throw new Error('THREE.js is not included or is an old version (>48)');
+		}
+		
 	},
 	
 
@@ -238,15 +483,11 @@ WebGlMenu.prototype = {
 		var mesh = new THREE.Mesh(geometry, material);
 		mesh.angle = 0;
 		mesh.radius = 0;
-		
-		mesh.getPositionAt = function(distance){
-			return new THREE.Vector3(
-				(this.radius - distance) * Math.cos(this.angle),
-				this.position.y, 
-				- ((this.radius - distance) * Math.sin(this.angle))	
-			);
-		};
 		return mesh;
+	},
+	
+	trigger: function(event, args){
+		console.log('trigger', event);
 	}
 };
 	
@@ -324,7 +565,6 @@ WebGlMenu.prototype.debug = function(){
 			$(window).unload(function(){
 				inst.remember.position(id, camera.position);
 				inst.remember.quaternion(id, camera.quaternion);
-				console.log('update matrix in db', id);
 			});	
 		})(this, i, camera);
 	
@@ -352,7 +592,6 @@ WebGlMenu.prototype.debug = function(){
 			view.info = new Debug.InfoPanel(view.camera, {x: 10, y: 10}, this.target);
 		}
 		if(view.fly){
-			console.log('fly', i);
 			view.control = new THREE.FlyControls( view.camera, this.canvas);
 			view.control.domElement = this.target;
 			view.control.movementSpeed = 30;
@@ -487,8 +726,6 @@ WebGlMenu.prototype.remember = {
 Debug = {};
 Debug.InfoPanel = function(object3D, position, target){
 	this.check(object3D);
-
-	console.log(object3D);
 	
 	this.object = object3D;
 	this.target = $(target);
@@ -583,7 +820,25 @@ $.fn.WebGlMenu = function(elements, options){
 			instance = el.data('WebGlMenu');
 		}
 		else {
-			instance = new menu(this, elements, options);
+			try {
+				instance = new menu(this, elements, options);
+			}
+			catch(e){
+				console.log(e);
+				el.append($('<div>')
+				  .html('WebGLMenu plugin:' + "<br /><b>" + e.message + "</b>")
+				  .css({
+					  background: '#ddaaaa', 
+					  color: '#880000', 
+					  border: '2px solid #660000', 
+					  borderRadius: '5px', 
+					  width: '300px', 
+					  textAlign: 'center', 
+					  lineHeight: '40px',   
+					  padding: '2px 3px', 
+					  margin: '5px auto'
+				}));
+			}
 			el.data('WebGlMenu', instance);
 		}
 	});
@@ -591,5 +846,6 @@ $.fn.WebGlMenu = function(elements, options){
 }	
 	
 
+	
 
 })(jQuery)

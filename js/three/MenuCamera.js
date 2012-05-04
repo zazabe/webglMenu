@@ -1,12 +1,3 @@
-/**
- * @author zazabe
- * 
- * Modified version of PerspectiveCamera
- * 
- * @author mr.doob / http://mrdoob.com/
- * @author greggman / http://games.greggman.com/
- * @author zz85 / http://www.lab4games.net/zz85/blog
- */
 
 THREE.Vector3.prototype.getValue = function(){
 	return {
@@ -16,19 +7,73 @@ THREE.Vector3.prototype.getValue = function(){
 	};
 };
 
-THREE.MenuCamera = function ( fov, aspect, near, far ) {
+
+THREE.Object3D.prototype.scaleTo = function(x, y, z, duration, callback){
+	var obj = this,
+	    from = this.scale.getValue(),
+		to = {x: x, y: y, z: z},
+		tween = new TWEEN.Tween(from).to(to, duration);
+	
+	tween.onUpdate(function(){
+		obj.scale.set(from.x, from.y, from.z);
+	});
+	tween.onComplete(function(){
+		if(callback){
+			callback.apply(obj);
+		}
+	});
+	tween.start();
+	
+};
+
+THREE.Object3D.prototype.getPositionAt = function(distance){
+	return new THREE.Vector3(
+		(this.radius - distance) * Math.cos(this.angle),
+		this.position.y, 
+		- ((this.radius - distance) * Math.sin(this.angle))	
+	);
+};
+
+/**
+ * @author zazabe
+ * 
+ * Modified version of PerspectiveCamera
+ * 
+ * @author mr.doob / http://mrdoob.com/
+ * @author greggman / http://games.greggman.com/
+ * @author zz85 / http://www.lab4games.net/zz85/blog
+ */
+THREE.MenuCamera = function ( options ) {
 	THREE.Camera.call( this );
 
-	this.look = {
-		distance: 100,
-		object: null
-	};
 	
-	this.fov = fov !== undefined ? fov : 50;
-	this.aspect = aspect !== undefined ? aspect : 1;
-	this.near = near !== undefined ? near : 0.1;
-	this.far = far !== undefined ? far : 2000;
+	this.opt = $.extend({
+		//position, movement
+		distance: 200,
+		duration: 1000,
+		easing: TWEEN.Easing.Exponential.Out,
+		//camera
+		fov: 50,
+		aspect: 1,
+		near: 0.1,
+		far: 2000,
+		looklight: null
+	}, options);
 
+	this.look = {
+		distance: this.opt.distance,
+		object: null,
+		position: null,
+		angle: 0
+	};
+
+	this.fov = this.opt.fov;
+	this.aspect = this.opt.aspect;
+	this.near = this.opt.near;
+	this.far = this.opt.far;
+
+	this.inAnim = false;
+	
 	this.updateProjectionMatrix();
 };
 
@@ -93,45 +138,109 @@ THREE.MenuCamera.prototype.lookTo = function(object){
 	this.lookFrom(object, this.look.distance);
 	this.lookAt(object.position);
 	this.look.object = object;
-	console.log(this.look);
+	this.look.position = object.position.clone();
+	this.look.angle = object.angle;
 };
 
 
-THREE.MenuCamera.prototype.moveTo = function(object, duration){
-	
-	
-	var move = {
-		eye: {
-			from  : this.look.object.getPositionAt(this.look.distance).getValue(),
-			to    : object.getPositionAt(this.look.distance).clone().getValue(),
-			tween : null
-		},
-		look: {
-			from  : this.look.object.position.clone().getValue(),
-			to    : object.position.clone().getValue(),
-			tween : null
-		}
-	};
-	var camera = this;
-	this.look.object = object;
-	var eyeTween = new TWEEN.Tween(move.eye.from).to(move.eye.to, duration).easing(TWEEN.Easing.Exponential.Out);
-	eyeTween.onUpdate(function(){
-		camera.position.set(move.eye.from.x, move.eye.from.y, move.eye.from.z);
-	});
-	
-	var lookTween = new TWEEN.Tween(move.look.from).to(move.look.to, duration).easing(TWEEN.Easing.Exponential.Out);
-	lookTween.onUpdate(function(){
-		camera.lookAt(new THREE.Vector3(move.look.from.x, move.look.from.y, move.look.from.z));
-	});
-	
-	var complete = 0;
-	var atCompletion = function(){
+THREE.MenuCamera.prototype.moveTo = function(object, duration, callback, force){
+	force = force || false;
+	if(!this.inAnim || force){
+		duration = duration || this.opt.duration;
+		var move = {
+			eye: {
+				from  : this.look.object.getPositionAt(this.look.distance).getValue(),
+				to    : object.getPositionAt(this.look.distance).clone().getValue()
+			},
+			look: {
+				from  : this.look.position.getValue(),
+				to    : object.position.clone().getValue()
+			},
+			light: {
+				from  : this.look.object.getPositionAt(30).getValue(),
+				to    : object.getPositionAt(30).clone().getValue()
+			}
+		};
 		
-	};
-	eyeTween.onComplete(atCompletion);
-	lookTween.onComplete(atCompletion);
-	
-	eyeTween.start();
-	lookTween.start();
+		
+		this.look.object = object;
+		this.look.position = object.position.clone();
+		this.look.angle = object.angle;
+		this.animTo(move, duration, callback, force);
+	}
 };
 
+THREE.MenuCamera.prototype.animTo = function(move, duration, callback, force){
+	force = force || false;
+	if(!this.inAnim || force){
+	
+		this.inAnim = true;
+		
+		var camera = this;
+		var complete = 0;
+		
+		var atCompletion = function(){
+			if(--complete <= 0){
+				camera.inAnim = false;
+				console.log('anim completed', camera.inAnim);
+				if(callback){
+					callback.apply(camera);
+				}
+			}
+		};
+		
+		
+		if(move.eye){
+			complete++;
+			var eyeTween = new TWEEN.Tween(move.eye.from).to(move.eye.to, duration).easing(this.opt.easing);
+			eyeTween.onUpdate(function(){
+				camera.position.set(move.eye.from.x, move.eye.from.y, move.eye.from.z);
+			});
+			eyeTween.onComplete(atCompletion);
+			eyeTween.start();
+		}
+		if(move.look){
+			complete++;
+			
+			var lookTween = new TWEEN.Tween(move.look.from).to(move.look.to, duration).easing(this.opt.easing);
+			lookTween.onUpdate(function(){
+				camera.lookAt(new THREE.Vector3(move.look.from.x, move.look.from.y, move.look.from.z));
+			});
+			lookTween.onComplete(atCompletion);
+			lookTween.start();
+		}
+		if(move.light && this.opt.looklight){
+			complete++;
+			
+			var lightTween = new TWEEN.Tween(move.light.from).to(move.light.to, duration).easing(this.opt.easing);
+			lightTween.onUpdate(function(){
+				camera.opt.looklight.position = new THREE.Vector3(move.light.from.x, move.light.from.y, move.light.from.z);
+			});
+			lightTween.onComplete(atCompletion);
+			lightTween.start();
+		}
+	}
+	
+};
+
+
+THREE.MenuCamera.prototype.distanceToElement = function(distance, duration, callback){
+	duration = duration || 0;
+	if(duration){
+		
+		this.animTo({
+			eye: {
+				from  : this.position.getValue(),
+				to    : this.look.object.getPositionAt(distance).clone().getValue()
+			}
+		}, duration, callback );
+	}
+	else {
+		this.look.distance = distance;
+		this.position = this.look.object.getPositionAt(distance).clone();
+		if(callback){
+			callback.apply(this);
+		}
+	}
+	
+};
